@@ -167,4 +167,44 @@ if "SettingsHook: modern Graph settings mapping incomplete" not in hs:
         hs = hs.replace(needle, diagnostic + needle, 1)
 hook.write_text(hs, encoding="utf-8")
 
+
+# Ensure runtime mapping runs before any SettingsActivity hook/class lookup.
+manager = root / "app/src/main/java/com/my/televip/settings/SettingsManager.java"
+ms = manager.read_text(encoding="utf-8")
+init_marker = "        SettingsActivity.init(settingsController);\\n"
+resolver_call = """        // Graph's static profile omits the nested Factory class; resolve it from fillItems bytecode first.
+        if (ClientManager.is(ClientManager.Client.Telegraph)) {
+            ObfuscationManager.ensureRuntimeSettingsMappings();
+        }
+
+"""
+if init_marker not in ms:
+    raise SystemExit("SettingsManager init marker not found")
+if resolver_call not in ms:
+    ms = ms.replace(init_marker, resolver_call + init_marker, 1)
+
+old_branch = """        if (SettingsActivityClass != null && SettingsActivity$SettingCell$FactoryClass != null) {
+            settings.newSettings(SettingsActivityClass, SettingsActivity$SettingCell$FactoryClass, settingsController);
+        } else {
+            settings.oldSettings(settingsController);
+        }
+"""
+new_branch = """        if (SettingsActivityClass != null && SettingsActivity$SettingCell$FactoryClass != null) {
+            Logger.w("SettingsManager: installing modern SettingsActivity hook; activity="
+                    + SettingsActivityClass.getName() + ", factory="
+                    + SettingsActivity$SettingCell$FactoryClass.getName());
+            settings.newSettings(SettingsActivityClass, SettingsActivity$SettingCell$FactoryClass, settingsController);
+        } else if (ClientManager.is(ClientManager.Client.Telegraph)) {
+            Logger.w("SettingsManager: Graph modern settings hook not installed; activity="
+                    + SettingsActivityClass + ", factory=" + SettingsActivity$SettingCell$FactoryClass
+                    + ". Legacy drawer fallback intentionally disabled.");
+        } else {
+            settings.oldSettings(settingsController);
+        }
+"""
+if old_branch not in ms:
+    raise SystemExit("SettingsManager modern/legacy branch mismatch")
+ms = ms.replace(old_branch, new_branch, 1)
+manager.write_text(ms, encoding="utf-8")
+
 print("Patched Graph SettingsActivity resolver to trace fillItems -> Factory.of -> UItem; cache schema=34")
