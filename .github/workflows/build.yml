@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'TeleVipNext-Telegraph-SettingsMenu-Fix.zip'
+      - 'patches/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
@@ -27,12 +28,19 @@ jobs:
         run: |
           mkdir source
           unzip -q TeleVipNext-Telegraph-SettingsMenu-Fix.zip -d source
-          SETTINGS_FILE="$(find source -name settings.gradle -o -name settings.gradle.kts | head -n 1)"
+          SETTINGS_FILE="$(find source \\( -name settings.gradle -o -name settings.gradle.kts \\) -print -quit)"
           test -n "$SETTINGS_FILE"
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
           test -f "$PROJECT_DIR/gradlew"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Apply Graph Messenger 13.2 settings hook fix
+        run: |
+          python3 patches/apply_telegraph_settings_13_2.py "$PROJECT_DIR"
+          grep -q 'SCHEMA_VERSION = 33' "$PROJECT_DIR/app/src/main/java/com/my/televip/obfuscate/auto/AutoMappingResolver.java"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          (cd "$PROJECT_DIR" && zip -qr "$GITHUB_WORKSPACE/dist/TeleVipNext-Telegraph-13.2.2.2-patched-source.zip" .)
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -55,5 +63,13 @@ jobs:
         with:
           name: televipnext-telegraph-settingsmenu-apk
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: televipnext-telegraph-patched-source
+          path: dist/TeleVipNext-Telegraph-13.2.2.2-patched-source.zip
           if-no-files-found: error
           retention-days: 14
