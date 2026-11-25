@@ -154,7 +154,7 @@ manager.write_text(ms, encoding="utf-8")
 
 # Make the hook fail loudly instead of silently choosing the legacy drawer when Graph's
 # modern SettingsActivity exists but its factory mapping could not be resolved.
-hook = root / "app/src/main/java/com/my/televip/settings/SettingsHook.java"
+hook = root / "app/src/main/java/com/my/televip/settings/hook/SettingsHook.java"
 hs = hook.read_text(encoding="utf-8")
 if "SettingsHook: modern Graph settings mapping incomplete" not in hs:
     needle = "    public void oldSettings(SettingsController settingsController){"
