@@ -27,7 +27,7 @@ jobs:
         run: |
           mkdir source
           unzip -q TeleVipNext-Telegraph-hook-source.zip -d source
-          PROJECT_DIR="$(find source -name settings.gradle -printf '%h\\n' | head -n 1)"
+          PROJECT_DIR="$(find source -name settings.gradle -printf '%h\n' | head -n 1)"
           test -n "$PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$PROJECT_DIR/gradlew"
