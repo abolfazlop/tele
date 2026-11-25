@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'tele-GraphMessenger-13.2.2.2-source.zip'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
@@ -37,8 +38,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --licenses
+          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build release APK
         run: |
