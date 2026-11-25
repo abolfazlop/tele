@@ -168,20 +168,32 @@ if "SettingsHook: modern Graph settings mapping incomplete" not in hs:
 hook.write_text(hs, encoding="utf-8")
 
 
-# Ensure runtime mapping runs before any SettingsActivity hook/class lookup.
+
+# Run the behaviour-based resolver before any settings class lookup.
 manager = root / "app/src/main/java/com/my/televip/settings/SettingsManager.java"
 ms = manager.read_text(encoding="utf-8")
-init_marker = "        SettingsActivity.init(settingsController);\\n"
+if "import com.my.televip.logging.Logger;" not in ms:
+    ms = ms.replace("import com.my.televip.obfuscate.ObfuscationManager;",
+                    "import com.my.televip.obfuscate.ObfuscationManager;\\nimport com.my.televip.logging.Logger;")
+
+# Remove the earlier duplicate call, then place one call before SettingsActivity.init().
+old_start = ms.find("        // Telegraph ships a partial static mapping.")
+if old_start >= 0:
+    old_end = ms.find("\\n\\n", old_start)
+    if old_end >= 0:
+        ms = ms[:old_start] + ms[old_end + 2:]
+
 resolver_call = """        // Graph's static profile omits the nested Factory class; resolve it from fillItems bytecode first.
         if (ClientManager.is(ClientManager.Client.Telegraph)) {
             ObfuscationManager.ensureRuntimeSettingsMappings();
         }
 
 """
-if init_marker not in ms:
+marker = "        SettingsActivity.init(settingsController);"
+if marker not in ms:
     raise SystemExit("SettingsManager init marker not found")
 if resolver_call not in ms:
-    ms = ms.replace(init_marker, resolver_call + init_marker, 1)
+    ms = ms.replace(marker, resolver_call + marker, 1)
 
 old_branch = """        if (SettingsActivityClass != null && SettingsActivity$SettingCell$FactoryClass != null) {
             settings.newSettings(SettingsActivityClass, SettingsActivity$SettingCell$FactoryClass, settingsController);
