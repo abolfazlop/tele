@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'tele-GraphMessenger-13.2.2.2-source.zip'
+      - 'TeleVipNext-Telegraph-hook-source.zip'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
@@ -20,14 +20,14 @@ jobs:
 
       - name: Verify source archive
         run: |
-          test -f tele-GraphMessenger-13.2.2.2-source.zip
-          unzip -t tele-GraphMessenger-13.2.2.2-source.zip
+          test -f TeleVipNext-Telegraph-hook-source.zip
+          unzip -t TeleVipNext-Telegraph-hook-source.zip
 
       - name: Extract project
         run: |
           mkdir source
-          unzip -q tele-GraphMessenger-13.2.2.2-source.zip -d source
-          PROJECT_DIR="$(find source -name settings.gradle -printf '%h\n' | head -n 1)"
+          unzip -q TeleVipNext-Telegraph-hook-source.zip -d source
+          PROJECT_DIR="$(find source -name settings.gradle -printf '%h\\n' | head -n 1)"
           test -n "$PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$PROJECT_DIR/gradlew"
@@ -51,7 +51,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: tele-graphmessenger-13.2.2.2-apk
+          name: televipnext-telegraph-hook-apk
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
