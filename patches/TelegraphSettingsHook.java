@@ -102,7 +102,7 @@ public final class TelegraphSettingsHook {
                         }
                         if (position == injectedRowPosition && position >= 0) {
                             controller.openView();
-                            param.setResult(param.method.getReturnType() == boolean.class ? Boolean.TRUE : null);
+                            param.setResult(((Method) param.method).getReturnType() == boolean.class ? Boolean.TRUE : null);
                         }
                     }
                 });
