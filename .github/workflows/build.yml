@@ -27,8 +27,10 @@ jobs:
         run: |
           mkdir source
           unzip -q TeleVipNext-Telegraph-SettingsMenu-Fix.zip -d source
-          PROJECT_DIR="$(find source -name settings.gradle -printf '%h\\n' | head -n 1)"
-          test -n "$PROJECT_DIR"
+          SETTINGS_FILE="$(find source -name settings.gradle -o -name settings.gradle.kts | head -n 1)"
+          test -n "$SETTINGS_FILE"
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          test -f "$PROJECT_DIR/gradlew"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$PROJECT_DIR/gradlew"
 
