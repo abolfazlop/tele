@@ -219,4 +219,27 @@ if old_branch not in ms:
 ms = ms.replace(old_branch, new_branch, 1)
 manager.write_text(ms, encoding="utf-8")
 
+
+# Supply a valid default for every possible primitive trailing Factory.of parameter.
+hook = root / "app/src/main/java/com/my/televip/settings/hook/SettingsHook.java"
+hs = hook.read_text(encoding="utf-8")
+old_arg = """                                                Object arg6 = pt[6] == boolean.class ? Boolean.FALSE
+                                                        : (pt[6] == int.class ? Integer.valueOf(0) : null);
+"""
+new_arg = """                                                Object arg6 = null;
+                                                if (pt[6].isPrimitive()) {
+                                                    if (pt[6] == boolean.class) arg6 = Boolean.FALSE;
+                                                    else if (pt[6] == char.class) arg6 = Character.valueOf('\\0');
+                                                    else if (pt[6] == byte.class) arg6 = Byte.valueOf((byte) 0);
+                                                    else if (pt[6] == short.class) arg6 = Short.valueOf((short) 0);
+                                                    else if (pt[6] == int.class) arg6 = Integer.valueOf(0);
+                                                    else if (pt[6] == long.class) arg6 = Long.valueOf(0L);
+                                                    else if (pt[6] == float.class) arg6 = Float.valueOf(0f);
+                                                    else if (pt[6] == double.class) arg6 = Double.valueOf(0d);
+                                                }
+"""
+if old_arg in hs:
+    hs = hs.replace(old_arg, new_arg, 1)
+hook.write_text(hs, encoding="utf-8")
+
 print("Patched Graph SettingsActivity resolver to trace fillItems -> Factory.of -> UItem; cache schema=34")
