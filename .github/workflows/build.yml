@@ -28,9 +28,12 @@ jobs:
         run: |
           mkdir source
           unzip -q TeleVipNext-Telegraph-SettingsMenu-Fix.zip -d source
-          SETTINGS_FILE="$(find source \\( -name settings.gradle -o -name settings.gradle.kts \\) -print -quit)"
+          SETTINGS_FILE=$(find source -name settings.gradle -print -quit)
+          if [ -z "$SETTINGS_FILE" ]; then
+            SETTINGS_FILE=$(find source -name settings.gradle.kts -print -quit)
+          fi
           test -n "$SETTINGS_FILE"
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
           test -f "$PROJECT_DIR/gradlew"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$PROJECT_DIR/gradlew"
@@ -39,7 +42,7 @@ jobs:
         run: |
           python3 patches/apply_telegraph_settings_13_2.py "$PROJECT_DIR"
           grep -q 'SCHEMA_VERSION = 33' "$PROJECT_DIR/app/src/main/java/com/my/televip/obfuscate/auto/AutoMappingResolver.java"
-          mkdir -p "$GITHUB_WORKSPACE/dist"
+          mkdir -p dist
           (cd "$PROJECT_DIR" && zip -qr "$GITHUB_WORKSPACE/dist/TeleVipNext-Telegraph-13.2.2.2-patched-source.zip" .)
 
       - name: Set up JDK 17
