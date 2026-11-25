@@ -12,7 +12,7 @@ new_init='''    public static void init(SettingsController settingsController) {
         SettingsActivity.init(settingsController);
 
         Class<?> settingsActivityClass = XposedHelpers.findClassIfExists(
-                Obfuscate.getClassName("org.telegram.ui.SettingsActivity"), Utils.classLoader);
+                Obfuscate.getClassName("org.telegram.ui.TelegraphSettingsActivity"), Utils.classLoader);
         Class<?> factoryClass = XposedHelpers.findClassIfExists(
                 Obfuscate.getClassName("org.telegram.ui.SettingsActivity$SettingCell$Factory"), Utils.classLoader);
 
@@ -20,7 +20,7 @@ new_init='''    public static void init(SettingsController settingsController) {
         if (ClientManager.is(ClientManager.Client.Telegraph)) {
             if (settingsActivityClass == null) {
                 settingsActivityClass = XposedHelpers.findClassIfExists(
-                        "org.telegram.ui.SettingsActivity", Utils.classLoader);
+                        "org.telegram.ui.TelegraphSettingsActivity", Utils.classLoader);
             }
             if (factoryClass == null) {
                 factoryClass = XposedHelpers.findClassIfExists(
@@ -46,7 +46,7 @@ new_init='''    public static void init(SettingsController settingsController) {
                     + settingsActivityClass.getName() + " / " + factoryClass.getName());
             settings.newSettings(settingsActivityClass, factoryClass, settingsController);
         } else if (ClientManager.is(ClientManager.Client.Telegraph)) {
-            com.my.televip.logging.Logger.w("SettingsManager: Graph SettingsActivity/Factory class not found. activity="
+            com.my.televip.logging.Logger.w("SettingsManager: TelegraphSettingsActivity/Factory class not found. activity="
                     + settingsActivityClass + ", factory=" + factoryClass);
         } else {
             settings.oldSettings(settingsController);
@@ -106,7 +106,7 @@ new_method=r'''    private static java.lang.reflect.Field findSemanticField(Clas
 
     private static Method findFillItems(Class<?> activityClass) {
         Method fallback = null;
-        String mappedMethod = Obfuscate.getMethodName("SettingsActivity", "fillItems");
+        String mappedMethod = Obfuscate.getMethodName("TelegraphSettingsActivity", "fillItems");
         String mappedAdapter = Obfuscate.getClassName("org.telegram.ui.Components.UniversalAdapter");
         for (Method m : activityClass.getDeclaredMethods()) {
             if (m.getReturnType() != void.class) continue;
@@ -117,11 +117,11 @@ new_method=r'''    private static java.lang.reflect.Field findSemanticField(Clas
                 if (p.getName().equals(mappedAdapter)
                         || p.getName().equals("org.telegram.ui.Components.UniversalAdapter")) hasAdapter = true;
             }
-            if (!hasArrayList || !hasAdapter || java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+            if (!hasArrayList || java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
             m.setAccessible(true);
             if (mappedMethod != null && mappedMethod.equals(m.getName())) return m;
             if ("fillItems".equals(m.getName())) return m;
-            // The method name may be R8-renamed; the ArrayList + mapped UniversalAdapter signature is stable.
+            // Graph uses a dedicated TelegraphSettingsActivity; accept its ArrayList fill method even when UniversalAdapter is inherited.
             if (fallback == null) fallback = m;
         }
         return fallback;
@@ -129,7 +129,7 @@ new_method=r'''    private static java.lang.reflect.Field findSemanticField(Clas
 
     private static Method findOnClick(Class<?> activityClass, Class<?> itemClass) {
         Method fallback = null;
-        String mapped = Obfuscate.getMethodName("SettingsActivity", "onClick");
+        String mapped = Obfuscate.getMethodName("TelegraphSettingsActivity", "onClick");
         for (Method m : activityClass.getDeclaredMethods()) {
             if (m.getReturnType() != void.class) continue;
             Class<?>[] p = m.getParameterTypes();
