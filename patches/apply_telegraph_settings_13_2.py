@@ -174,12 +174,12 @@ manager = root / "app/src/main/java/com/my/televip/settings/SettingsManager.java
 ms = manager.read_text(encoding="utf-8")
 if "import com.my.televip.logging.Logger;" not in ms:
     ms = ms.replace("import com.my.televip.obfuscate.ObfuscationManager;",
-                    "import com.my.televip.obfuscate.ObfuscationManager;\\nimport com.my.televip.logging.Logger;")
+                    "import com.my.televip.obfuscate.ObfuscationManager;\nimport com.my.televip.logging.Logger;")
 
 # Remove the earlier duplicate call, then place one call before SettingsActivity.init().
 old_start = ms.find("        // Telegraph ships a partial static mapping.")
 if old_start >= 0:
-    old_end = ms.find("\\n\\n", old_start)
+    old_end = ms.find("\n\n", old_start)
     if old_end >= 0:
         ms = ms[:old_start] + ms[old_end + 2:]
 
@@ -229,7 +229,7 @@ old_arg = """                                                Object arg6 = pt[6]
 new_arg = """                                                Object arg6 = null;
                                                 if (pt[6].isPrimitive()) {
                                                     if (pt[6] == boolean.class) arg6 = Boolean.FALSE;
-                                                    else if (pt[6] == char.class) arg6 = Character.valueOf('\\0');
+                                                    else if (pt[6] == char.class) arg6 = Character.valueOf((char) 0);
                                                     else if (pt[6] == byte.class) arg6 = Byte.valueOf((byte) 0);
                                                     else if (pt[6] == short.class) arg6 = Short.valueOf((short) 0);
                                                     else if (pt[6] == int.class) arg6 = Integer.valueOf(0);
