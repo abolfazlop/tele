@@ -1,197 +1,311 @@
-#!/usr/bin/env python3
-"""Patch TeleVipNext to resolve Telegraph Settings hooks by bytecode behaviour."""
 from pathlib import Path
 import sys
+root=Path(sys.argv[1]).resolve()
 
-root = Path(sys.argv[1]).resolve()
+# 1) SettingsManager: use the real Graph SettingsActivity and Factory classes directly.
+manager=root/'app/src/main/java/com/my/televip/settings/SettingsManager.java'
+ms=manager.read_text(encoding='utf-8')
+start=ms.index('    public static void init(SettingsController settingsController) {')
+end=ms.index('\n    }\n\n}', start)+7
+new_init='''    public static void init(SettingsController settingsController) {
 
-# Keep the original behaviour-based DexScanner resolver. The previous patch replaced
-# it with a hard-coded SettingsActivity descriptor, which cannot discover renamed classes.
-resolver = root / "app/src/main/java/com/my/televip/obfuscate/auto/AutoMappingResolver.java"
-rs = resolver.read_text(encoding="utf-8")
-start = "    private void resolveSettingsClasses(DexScanner scanner) {"
-end = "\n    private static String findTheme("
-if start not in rs or end not in rs:
-    raise SystemExit("AutoMappingResolver.resolveSettingsClasses not found")
-a = rs.index(start)
-b = rs.index(end, a)
+        SettingsActivity.init(settingsController);
 
-method = r"""    private void resolveSettingsClasses(DexScanner scanner) {
-        final String[] uItemDescHolder = new String[1];
-        final String[] factoryOfName = new String[1];
-        final String[][] factoryOfParams = new String[1][];
-        final String[] factoryBindName = new String[1];
+        Class<?> settingsActivityClass = XposedHelpers.findClassIfExists(
+                Obfuscate.getClassName("org.telegram.ui.SettingsActivity"), Utils.classLoader);
+        Class<?> factoryClass = XposedHelpers.findClassIfExists(
+                Obfuscate.getClassName("org.telegram.ui.SettingsActivity$SettingCell$Factory"), Utils.classLoader);
 
-        // Behaviour signature: a static factory taking four ints and two text values,
-        // returning the client's UItem model. Do not depend on the obfuscated class name.
-        String factoryDesc = scanner.findClassByPredicate("Lorg/telegram/ui/", (desc, fields, methods) -> {
-            if (desc.contains("/Components/")) return false;
-            for (DexScanner.MethodInfo m : methods) {
-                if (m.isStatic && m.returnDesc.startsWith("Lorg/telegram/ui/Components/")
-                        && (m.paramDescs.length == 6 || m.paramDescs.length == 7)
-                        && "I".equals(m.paramDescs[0]) && "I".equals(m.paramDescs[1])
-                        && "I".equals(m.paramDescs[2]) && "I".equals(m.paramDescs[3])
-                        && "Ljava/lang/CharSequence;".equals(m.paramDescs[4])
-                        && "Ljava/lang/CharSequence;".equals(m.paramDescs[5])) {
-                    uItemDescHolder[0] = m.returnDesc;
-                    factoryOfName[0] = m.name;
-                    factoryOfParams[0] = m.paramDescs;
-                    return true;
+        // Graph direct SettingsActivity fallback: do not depend on the failing runtime DEX heuristic.
+        if (ClientManager.is(ClientManager.Client.Telegraph)) {
+            if (settingsActivityClass == null) {
+                settingsActivityClass = XposedHelpers.findClassIfExists(
+                        "org.telegram.ui.SettingsActivity", Utils.classLoader);
+            }
+            if (factoryClass == null) {
+                factoryClass = XposedHelpers.findClassIfExists(
+                        "org.telegram.ui.SettingsActivity$SettingCell$Factory", Utils.classLoader);
+            }
+            if (factoryClass == null && settingsActivityClass != null) {
+                for (Class<?> settingCell : settingsActivityClass.getDeclaredClasses()) {
+                    if ("SettingCell".equals(settingCell.getSimpleName())) {
+                        for (Class<?> nested : settingCell.getDeclaredClasses()) {
+                            if ("Factory".equals(nested.getSimpleName())) {
+                                factoryClass = nested;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
-            return false;
-        });
-
-        if (factoryDesc == null || uItemDescHolder[0] == null) {
-            Logger.w("AutoMappingResolver: Telegraph settings UItem factory behaviour not found");
-            return;
-        }
-        String uItemDesc = uItemDescHolder[0];
-
-        addClass("org.telegram.ui.SettingsActivity$SettingCell$Factory", factoryDesc);
-        addMethod("SettingsActivity$SettingCell$Factory", "of", factoryOfName[0]);
-        addClass(ClassNames.UITEM, uItemDesc);
-
-        // Resolve Factory.bindView from its parameter types, not its obfuscated name.
-        for (DexScanner.MethodInfo m : scanner.getMethods(factoryDesc)) {
-            if (!m.isStatic && "V".equals(m.returnDesc) && m.paramDescs.length >= 3
-                    && "Landroid/view/View;".equals(m.paramDescs[0])
-                    && uItemDesc.equals(m.paramDescs[1]) && "Z".equals(m.paramDescs[2])) {
-                factoryBindName[0] = m.name;
-                break;
-            }
-        }
-        if (factoryBindName[0] != null) {
-            addMethod("SettingsActivity$SettingCell$Factory", "bindView", factoryBindName[0]);
         }
 
-        // Read the UItem id/title/subtitle fields from writes in the discovered factory method.
-        String firstInt = null;
-        String cs1 = null, cs2 = null;
-        for (DexScanner.FieldInfo f : scanner.getWrittenFieldsInMethod(
-                factoryDesc, factoryOfName[0], factoryOfParams[0], uItemDesc)) {
-            if ("I".equals(f.typeDesc) && firstInt == null) firstInt = f.name;
-            else if ("Ljava/lang/CharSequence;".equals(f.typeDesc)) {
-                if (cs1 == null) cs1 = f.name;
-                else if (cs2 == null && !f.name.equals(cs1)) cs2 = f.name;
-            }
-        }
-        if (firstInt != null) addField("UItem", "id", firstInt);
-        if (cs1 != null) addField("UItem", "text", cs1);
-        if (cs2 != null) addField("UItem", "subtext", cs2);
-
-        // Find the settings screen by behaviour. Accept both instance methods
-        // (fillItems(ArrayList), onClick(UItem)) and static methods whose first
-        // argument is the activity instance. This is the key compatibility fix.
-        final String[] fillItemsName = new String[1];
-        final String[] onClickName = new String[1];
-        String settingsDesc = scanner.findClassByPredicate("Lorg/telegram/ui/", (desc, fields, methods) -> {
-            if (desc.contains("$") || desc.contains("/Components/") || desc.contains("/Cells/")) return false;
-            String fill = null, click = null;
-            for (DexScanner.MethodInfo m : methods) {
-                if (!"V".equals(m.returnDesc) || m.name.startsWith("<")) continue;
-                boolean hasArrayList = false;
-                boolean hasUItem = false;
-                for (String p : m.paramDescs) {
-                    if ("Ljava/util/ArrayList;".equals(p)) hasArrayList = true;
-                    if (uItemDesc.equals(p)) hasUItem = true;
-                }
-                if (hasArrayList) fill = m.name;
-                if (hasUItem) click = m.name;
-            }
-            if (fill != null && click != null && !fill.equals(click)) {
-                fillItemsName[0] = fill;
-                onClickName[0] = click;
-                return true;
-            }
-            return false;
-        });
-
-        if (settingsDesc != null) {
-            addClass("org.telegram.ui.SettingsActivity", settingsDesc);
-            addMethod("SettingsActivity", "fillItems", fillItemsName[0]);
-            addMethod("SettingsActivity", "onClick", onClickName[0]);
-            Logger.w("AutoMappingResolver: Telegraph Settings hooks found by behaviour: "
-                    + settingsDesc + " fillItems=" + fillItemsName[0] + " onClick=" + onClickName[0]
-                    + " Factory=" + factoryDesc + " UItem=" + uItemDesc);
+        SettingsHook settings = new SettingsHook();
+        if (settingsActivityClass != null && factoryClass != null) {
+            com.my.televip.logging.Logger.w("SettingsManager: installing SettingsActivity hook: "
+                    + settingsActivityClass.getName() + " / " + factoryClass.getName());
+            settings.newSettings(settingsActivityClass, factoryClass, settingsController);
+        } else if (ClientManager.is(ClientManager.Client.Telegraph)) {
+            com.my.televip.logging.Logger.w("SettingsManager: Graph SettingsActivity/Factory class not found. activity="
+                    + settingsActivityClass + ", factory=" + factoryClass);
         } else {
-            Logger.w("AutoMappingResolver: UItem factory found, but settings screen behaviour was not found");
+            settings.oldSettings(settingsController);
+        }
+        if (ClientManager.is(ClientManager.Client.ForkgramClassic)) settings.oldSettings(settingsController);
+        if (ClientManager.is(ClientManager.Client.Turrit)) Turrit.showGhostModeDialog(settingsController);
+    }
+'''
+ms=ms[:start]+new_init+ms[end:]
+manager.write_text(ms,encoding='utf-8')
+
+# 2) Hook the exact Re: TeleVIP integration surface independently:
+# SettingsActivity.fillItems + SettingsActivity.onClick + SettingCell.Factory.of/bindView.
+hook=root/'app/src/main/java/com/my/televip/settings/hook/SettingsHook.java'
+hs=hook.read_text(encoding='utf-8')
+start=hs.index('    public void newSettings(')
+end=hs.index('    public void oldSettings(',start)
+new_method=r'''    private static java.lang.reflect.Field findSemanticField(Class<?> type, String semantic) {
+        String mapped = Obfuscate.getFieldName("UItem", semantic);
+        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
+            if (mapped != null) {
+                try {
+                    java.lang.reflect.Field f = c.getDeclaredField(mapped);
+                    f.setAccessible(true);
+                    return f;
+                } catch (Throwable ignored) { }
+            }
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField(semantic);
+                f.setAccessible(true);
+                return f;
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private static Object readSemanticField(Object item, Class<?> itemClass, String semantic) {
+        try {
+            java.lang.reflect.Field f = findSemanticField(itemClass, semantic);
+            return f != null ? f.get(item) : null;
+        } catch (Throwable ignored) {
+            return null;
         }
     }
-"""
-rs = rs[:a] + method + rs[b:]
-rs = rs.replace("private static final int SCHEMA_VERSION = 32;", "private static final int SCHEMA_VERSION = 35;")
-resolver.write_text(rs, encoding="utf-8")
 
-# Ensure mappings are resolved before SettingsActivity hooks and before class lookup.
-manager = root / "app/src/main/java/com/my/televip/settings/SettingsManager.java"
-ms = manager.read_text(encoding="utf-8")
-if "import com.my.televip.logging.Logger;" not in ms:
-    ms = ms.replace("import com.my.televip.obfuscate.ObfuscationManager;",
-                    "import com.my.televip.obfuscate.ObfuscationManager;\nimport com.my.televip.logging.Logger;")
-block = """        // Telegraph ships a partial static mapping. Discover the obfuscated SettingsActivity
-        // and SettingCell.Factory at runtime before deciding whether to use the legacy drawer.
-        if (ClientManager.is(ClientManager.Client.Telegraph)) {
-            ObfuscationManager.ensureRuntimeSettingsMappings();
+    private static int getItemId(Object item, Class<?> itemClass) {
+        Object value = readSemanticField(item, itemClass, "id");
+        return value instanceof Number ? ((Number) value).intValue() : Integer.MIN_VALUE;
+    }
+
+    private static boolean isTeleVipItem(Object item, Class<?> itemClass) {
+        if (item == null || itemClass == null || !itemClass.isInstance(item)) return false;
+        if (getItemId(item, itemClass) == 8353847) return true;
+        Object text = readSemanticField(item, itemClass, "text");
+        return text != null && "Re: TeleVIP".contentEquals(String.valueOf(text));
+    }
+
+    private static Method findFillItems(Class<?> activityClass) {
+        Method fallback = null;
+        String mappedMethod = Obfuscate.getMethodName("SettingsActivity", "fillItems");
+        String mappedAdapter = Obfuscate.getClassName("org.telegram.ui.Components.UniversalAdapter");
+        for (Method m : activityClass.getDeclaredMethods()) {
+            if (m.getReturnType() != void.class) continue;
+            boolean hasArrayList = false;
+            boolean hasAdapter = false;
+            for (Class<?> p : m.getParameterTypes()) {
+                if (ArrayList.class.isAssignableFrom(p)) hasArrayList = true;
+                if (p.getName().equals(mappedAdapter)
+                        || p.getName().equals("org.telegram.ui.Components.UniversalAdapter")) hasAdapter = true;
+            }
+            if (!hasArrayList || !hasAdapter || java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+            m.setAccessible(true);
+            if (mappedMethod != null && mappedMethod.equals(m.getName())) return m;
+            if ("fillItems".equals(m.getName())) return m;
+            // The method name may be R8-renamed; the ArrayList + mapped UniversalAdapter signature is stable.
+            if (fallback == null) fallback = m;
         }
+        return fallback;
+    }
 
-"""
-ms = ms.replace(block, "")
-marker = "        SettingsActivity.init(settingsController);"
-call = """        // Resolve Graph/Telegraph's renamed settings classes before any settings hook lookup.
-        if (ClientManager.is(ClientManager.Client.Telegraph)) {
-            ObfuscationManager.ensureRuntimeSettingsMappings();
+    private static Method findOnClick(Class<?> activityClass, Class<?> itemClass) {
+        Method fallback = null;
+        String mapped = Obfuscate.getMethodName("SettingsActivity", "onClick");
+        for (Method m : activityClass.getDeclaredMethods()) {
+            if (m.getReturnType() != void.class) continue;
+            Class<?>[] p = m.getParameterTypes();
+            boolean hasItem = false, hasView = false, hasInt = false;
+            int floatCount = 0;
+            for (Class<?> t : p) {
+                if (itemClass.isAssignableFrom(t)) hasItem = true;
+                if (View.class.isAssignableFrom(t)) hasView = true;
+                if (t == int.class) hasInt = true;
+                if (t == float.class) floatCount++;
+            }
+            if (!hasItem || !hasView) continue;
+            m.setAccessible(true);
+            if (mapped != null && mapped.equals(m.getName())) return m;
+            if ("onClick".equals(m.getName())) return m;
+            if (hasInt && floatCount >= 2) fallback = m;
         }
+        return fallback;
+    }
 
-"""
-if marker not in ms:
-    raise SystemExit("SettingsManager.init marker not found")
-if call not in ms:
-    ms = ms.replace(marker, call + marker, 1)
-
-old_branch = """        if (SettingsActivityClass != null && SettingsActivity$SettingCell$FactoryClass != null) {
-            settings.newSettings(SettingsActivityClass, SettingsActivity$SettingCell$FactoryClass, settingsController);
-        } else {
-            settings.oldSettings(settingsController);
+    private static Method findFactoryOf(Class<?> factoryClass, Class<?> itemClass) {
+        Method best = null;
+        for (Method m : factoryClass.getDeclaredMethods()) {
+            if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+            if (!itemClass.isAssignableFrom(m.getReturnType())) continue;
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length != 6 && p.length != 7) continue;
+            if (p[0] != int.class || p[1] != int.class || p[2] != int.class || p[3] != int.class) continue;
+            if (!CharSequence.class.isAssignableFrom(p[4]) || !CharSequence.class.isAssignableFrom(p[5])) continue;
+            if (p.length == 7 && p[6] != CharSequence.class) continue;
+            m.setAccessible(true);
+            if (best == null || p.length > best.getParameterTypes().length) best = m;
         }
-"""
-new_branch = """        if (SettingsActivityClass != null && SettingsActivity$SettingCell$FactoryClass != null) {
-            Logger.w("SettingsManager: installing modern settings hook for "
-                    + SettingsActivityClass.getName() + " / "
-                    + SettingsActivity$SettingCell$FactoryClass.getName());
-            settings.newSettings(SettingsActivityClass, SettingsActivity$SettingCell$FactoryClass, settingsController);
-        } else if (ClientManager.is(ClientManager.Client.Telegraph)) {
-            Logger.w("SettingsManager: Telegraph modern settings hook NOT installed. activity="
-                    + SettingsActivityClass + " factory=" + SettingsActivity$SettingCell$FactoryClass);
-        } else {
-            settings.oldSettings(settingsController);
+        return best;
+    }
+
+    private static Object makeTeleVipItem(Method factoryOf) throws Exception {
+        Class<?>[] p = factoryOf.getParameterTypes();
+        Object[] args = new Object[p.length];
+        args[0] = 8353847;
+        args[1] = 0xFFF46F6F;
+        args[2] = 0xFFDF5555;
+        args[3] = 8353847;
+        args[4] = "Re: TeleVIP";
+        args[5] = "by @m_1_iq & @doandat943";
+        if (p.length == 7) args[6] = null;
+        return factoryOf.invoke(null, args);
+    }
+
+    private static int findInsertPosition(ArrayList<?> items, Class<?> itemClass) {
+        int textFallback = -1;
+        for (int i = 0; i < items.size(); i++) {
+            Object item = items.get(i);
+            if (item == null || !itemClass.isInstance(item)) continue;
+            if (getItemId(item, itemClass) == 1) return i;
+            Object title = readSemanticField(item, itemClass, "text");
+            Object subtitle = readSemanticField(item, itemClass, "subtext");
+            if (textFallback < 0 && title != null && subtitle != null) textFallback = i;
         }
-"""
-if old_branch not in ms:
-    raise SystemExit("SettingsManager modern/legacy branch not found")
-ms = ms.replace(old_branch, new_branch, 1)
-manager.write_text(ms, encoding="utf-8")
+        return textFallback >= 0 ? textFallback : items.size();
+    }
 
-# Handle every primitive type for an optional seventh Factory.of argument.
-hook = root / "app/src/main/java/com/my/televip/settings/hook/SettingsHook.java"
-hs = hook.read_text(encoding="utf-8")
-old_arg = """                                                Object arg6 = pt[6] == boolean.class ? Boolean.FALSE
-                                                        : (pt[6] == int.class ? Integer.valueOf(0) : null);
-"""
-new_arg = """                                                Object arg6 = null;
-                                                if (pt[6].isPrimitive()) {
-                                                    if (pt[6] == boolean.class) arg6 = Boolean.FALSE;
-                                                    else if (pt[6] == char.class) arg6 = Character.valueOf((char) 0);
-                                                    else if (pt[6] == byte.class) arg6 = Byte.valueOf((byte) 0);
-                                                    else if (pt[6] == short.class) arg6 = Short.valueOf((short) 0);
-                                                    else if (pt[6] == int.class) arg6 = Integer.valueOf(0);
-                                                    else if (pt[6] == long.class) arg6 = Long.valueOf(0L);
-                                                    else if (pt[6] == float.class) arg6 = Float.valueOf(0f);
-                                                    else if (pt[6] == double.class) arg6 = Double.valueOf(0d);
-                                                }
-"""
-if old_arg in hs:
-    hs = hs.replace(old_arg, new_arg, 1)
-hook.write_text(hs, encoding="utf-8")
+    private static void setTeleVipIcon(View cell, GhostDrawable drawable) {
+        if (cell == null) return;
+        for (Class<?> c = cell.getClass(); c != null; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (!ImageView.class.isAssignableFrom(f.getType())) continue;
+                try {
+                    f.setAccessible(true);
+                    ImageView image = (ImageView) f.get(cell);
+                    if (image != null) {
+                        image.setImageDrawable(drawable);
+                        return;
+                    }
+                } catch (Throwable ignored) { }
+            }
+        }
+    }
 
-print("Patched Telegraph settings hooks using behaviour-based DexScanner resolution (schema 35)")
+    public void newSettings(Class<?> SettingsActivityClass, Class<?> SettingsActivity$SettingCell$FactoryClass,
+                            SettingsController settingsController) {
+        try {
+            final Class<?> itemClass = XposedHelpers.findClassIfExists(
+                    Obfuscate.getClassName("org.telegram.ui.Components.UItem"), Utils.classLoader);
+            final Class<?> resolvedItemClass = itemClass != null ? itemClass
+                    : XposedHelpers.findClassIfExists("org.telegram.ui.Components.UItem", Utils.classLoader);
+            if (resolvedItemClass == null) {
+                Logger.w("SettingsHook: Graph UItem class not found; cannot hook Settings menu");
+                return;
+            }
+
+            final Method fillItems = findFillItems(SettingsActivityClass);
+            final Method onClick = findOnClick(SettingsActivityClass, resolvedItemClass);
+            final Method factoryOf = findFactoryOf(SettingsActivity$SettingCell$FactoryClass, resolvedItemClass);
+            if (fillItems == null || onClick == null || factoryOf == null) {
+                Logger.w("SettingsHook: Graph hooks incomplete. fillItems=" + fillItems
+                        + " onClick=" + onClick + " Factory.of=" + factoryOf);
+                return;
+            }
+
+            final GhostDrawable ghostDrawable = new GhostDrawable();
+            Logger.w("SettingsHook: Graph hooks resolved: " + fillItems.toGenericString()
+                    + " / " + onClick.toGenericString() + " / " + factoryOf.toGenericString());
+
+            XposedBridge.hookMethod(fillItems, new BaseMethodHook() {
+                @Override
+                @SuppressWarnings("unchecked")
+                protected void afterMethod(final MethodHookParam param) {
+                    try {
+                        ArrayList<Object> list = null;
+                        for (Object arg : param.args) {
+                            if (arg instanceof ArrayList) {
+                                list = (ArrayList<Object>) arg;
+                                break;
+                            }
+                        }
+                        if (list == null) return;
+                        for (Object existing : list) {
+                            if (isTeleVipItem(existing, resolvedItemClass)) return;
+                        }
+                        Object row = makeTeleVipItem(factoryOf);
+                        if (row == null) {
+                            Logger.w("SettingsHook: Graph Factory.of returned null");
+                            return;
+                        }
+                        int index = findInsertPosition(list, resolvedItemClass);
+                        list.add(Math.max(0, Math.min(index, list.size())), row);
+                        Logger.w("SettingsHook: inserted Re: TeleVIP into Graph Settings at " + index);
+                    } catch (Throwable t) {
+                        Logger.e(t);
+                    }
+                }
+            });
+
+            XposedBridge.hookMethod(onClick, new BaseMethodHook() {
+                @Override
+                protected void afterMethod(final MethodHookParam param) {
+                    try {
+                        for (Object arg : param.args) {
+                            if (isTeleVipItem(arg, resolvedItemClass)) {
+                                Logger.w("SettingsHook: opening Re: TeleVIP from Graph Settings");
+                                settingsController.openView();
+                                return;
+                            }
+                        }
+                    } catch (Throwable t) {
+                        Logger.e(t);
+                    }
+                }
+            });
+
+            // Re: TeleVIP uses the SettingCell Factory binding lifecycle as well.
+            for (Method bind : SettingsActivity$SettingCell$FactoryClass.getDeclaredMethods()) {
+                Class<?>[] p = bind.getParameterTypes();
+                if (bind.getReturnType() != void.class || p.length < 2
+                        || !View.class.isAssignableFrom(p[0]) || !resolvedItemClass.isAssignableFrom(p[1])) continue;
+                bind.setAccessible(true);
+                XposedBridge.hookMethod(bind, new BaseMethodHook() {
+                    @Override
+                    protected void afterMethod(final MethodHookParam param) {
+                        try {
+                            if (param.args.length >= 2 && isTeleVipItem(param.args[1], resolvedItemClass)) {
+                                setTeleVipIcon((View) param.args[0], ghostDrawable);
+                            }
+                        } catch (Throwable t) { Logger.e(t); }
+                    }
+                });
+                break;
+            }
+        } catch (Throwable t) {
+            Logger.e(t);
+        }
+    }
+
+'''
+hs=hs[:start]+new_method+hs[end:]
+hook.write_text(hs,encoding='utf-8')
+
+print('Applied direct Graph SettingsActivity lookup and signature-based fillItems/onClick/Factory.of hooks')
