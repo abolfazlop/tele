@@ -61,11 +61,29 @@ jobs:
           cd "$PROJECT_DIR"
           ./gradlew --no-daemon assembleRelease
 
-      - name: Upload APK
+      - name: Sign APK for installation
+        run: |
+          set -euo pipefail
+          UNSIGNED_APK="$(find "$PROJECT_DIR/app/build/outputs/apk/release" -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$UNSIGNED_APK"
+          SIGNING_PASSWORD="$(openssl rand -hex 24)"
+          KEYSTORE="$RUNNER_TEMP/televip-build-key.jks"
+          keytool -genkeypair -noprompt -keystore "$KEYSTORE" -storetype JKS \
+            -storepass "$SIGNING_PASSWORD" -keypass "$SIGNING_PASSWORD" \
+            -alias televip -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=TeleVip Next Build"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias televip \
+            --ks-pass "pass:$SIGNING_PASSWORD" --key-pass "pass:$SIGNING_PASSWORD" \
+            --out "$GITHUB_WORKSPACE/dist/TeleVipNext-Telegraph-13.2.2.2-signed.apk" "$UNSIGNED_APK"
+          "$APKSIGNER" verify --verbose "$GITHUB_WORKSPACE/dist/TeleVipNext-Telegraph-13.2.2.2-signed.apk"
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: televipnext-telegraph-settingsmenu-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
+          name: televipnext-telegraph-settingsmenu-signed-apk
+          path: dist/TeleVipNext-Telegraph-13.2.2.2-signed.apk
           if-no-files-found: error
           retention-days: 14
 
