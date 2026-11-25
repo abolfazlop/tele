@@ -41,7 +41,7 @@ jobs:
       - name: Apply Graph Messenger 13.2 settings hook fix
         run: |
           python3 patches/apply_telegraph_settings_13_2.py "$PROJECT_DIR"
-          grep -q 'SCHEMA_VERSION = 33' "$PROJECT_DIR/app/src/main/java/com/my/televip/obfuscate/auto/AutoMappingResolver.java"
+          grep -q 'SCHEMA_VERSION = 34' "$PROJECT_DIR/app/src/main/java/com/my/televip/obfuscate/auto/AutoMappingResolver.java"
           mkdir -p dist
           (cd "$PROJECT_DIR" && zip -qr "$GITHUB_WORKSPACE/dist/TeleVipNext-Telegraph-13.2.2.2-patched-source.zip" .)
 
