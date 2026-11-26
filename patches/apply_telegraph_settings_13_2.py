@@ -64,7 +64,7 @@ if "androidx.recyclerview:recyclerview" not in build_text:
 assert "GraphProfileSettingsHook(settingsController)" in manager.read_text(encoding="utf-8")
 hook = hook_target.read_text(encoding="utf-8")
 for token in ("org.telegram.ui.ProfileActivity", "org.telegram.ui.ai1", "org.telegram.ui.yf1",
-              "numberSectionRow", "getItemViewType", "onBindViewHolder"):
+              "numberRow", "numberSectionRow", "getItemViewType", "onBindViewHolder"):
     if token not in hook:
         raise SystemExit("Graph hook missing expected target marker: " + token)
 print("Applied Graph 13.2.2.2 ProfileActivity/ai1 row-index hook")
