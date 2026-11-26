@@ -49,7 +49,7 @@ public final class GraphProfileSettingsHook {
             "lastSectionRow", "linkedCommunityDividerRow", "linkedCommunityRow", "liteModeRow",
             "locationRow", "membersEndRow", "membersFilterRow", "membersHeaderRow", "membersSectionRow",
             "membersStartRow", "noteRow", "notificationRow", "notificationsDividerRow", "notificationsRow",
-            "notificationsSimpleRow", "numberRow", "numberSectionRow", "passwordSuggestionRow",
+            "notificationsSimpleRow", "numberRow", "numberSectionRow", "R4", "v2", "w2", "passwordSuggestionRow",
             "passwordSuggestionSectionRow", "phoneRow", "phoneSuggestionRow", "phoneSuggestionSectionRow",
             "policyRow", "premiumGiftingRow", "premiumRow", "premiumSectionsRow", "privacyRow",
             "questionRow", "reportDividerRow", "reportReactionRow", "reportRow", "secretSettingsSectionRow",
