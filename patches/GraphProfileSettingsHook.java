@@ -161,9 +161,9 @@ public final class GraphProfileSettingsHook {
 
     private void injectRow(Object activity) {
         try {
-            int currentAccountRow = readIntField(activity, "numberSectionRow");
+            int currentAccountRow = readIntField(activity, "numberRow");
             if (currentAccountRow < 0) {
-                Logger.w("GraphProfileSettingsHook: numberSectionRow is not initialized");
+                Logger.w("GraphProfileSettingsHook: numberRow (Account row) is not initialized");
                 return;
             }
             State old = STATES.get(activity);
@@ -185,7 +185,7 @@ public final class GraphProfileSettingsHook {
                 state.accountViewType = invokeInt(adapter, "getItemViewType", currentAccountRow + 1);
                 invokeNoArgs(adapter, "notifyDataSetChanged");
             }
-            Logger.w("GraphProfileSettingsHook: inserted Re: TeleVIP before Account at row "
+            Logger.w("GraphProfileSettingsHook: inserted Re: TeleVIP after Accounts heading and before Account at row "
                     + currentAccountRow + ", native cell type=" + state.accountViewType);
         } catch (Throwable t) {
             Logger.e(t);
