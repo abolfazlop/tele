@@ -36,7 +36,7 @@ text = re.sub(
 
 marker = "        SettingsActivity.init(settingsController);"
 branch = """        // Graph Messenger 13.2.2.2 root Settings screen is ProfileActivity with adapter ai1.
-        // Mirror Re: TeleVIP's row-index injection; do not hook Telegram SettingsActivity for Graph.
+        // Keep TeleVip's own settings/back-navigation initialization, then use Graph's row-index hook.
         if (ClientManager.is(ClientManager.Client.Telegraph)) {
             new com.my.televip.settings.hook.GraphProfileSettingsHook(settingsController)
                     .install(Utils.classLoader);
@@ -47,7 +47,7 @@ branch = """        // Graph Messenger 13.2.2.2 root Settings screen is ProfileA
 if marker not in text:
     raise SystemExit("SettingsManager SettingsActivity.init() marker not found")
 if "GraphProfileSettingsHook(settingsController)" not in text:
-    text = text.replace(marker, branch + marker, 1)
+    text = text.replace(marker, marker + "\\n\\n" + branch, 1)
 manager.write_text(text, encoding="utf-8")
 
 gradle = root / "app/build.gradle"
